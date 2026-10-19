@@ -1,0 +1,249 @@
+/* driving_status/pages/hotLine/hotLine.wxss */
+/* 表单样式 */
+.page {
+  padding: 10rpx;
+}
+.imgs {
+  width: 100%;
+  margin-top: 20rpx;
+  background-color: #fff;
+  border-radius: 10px;
+ 
+ }
+ .hot_box {
+   width: 100%;
+   display: flex;
+   justify-content: space-between;
+   margin: 20rpx 0;
+ }
+ .hot_left {
+   width: 80%;
+   display: flex;
+   
+ }
+ .hot_img {
+   width: 130rpx;
+   height: 100rpx;
+   border-radius: 10%;
+   overflow: hidden;
+ }
+ .hot_img image{
+   width: 130rpx;
+   height: 100rpx;
+   margin: 10rpx;
+ }
+ .hot_line {
+   display: flex;
+   align-items: center;
+   flex: 1;
+   padding-left: 40rpx;
+   box-sizing: border-box;
+   font-size: 14px;
+   font-weight: 600;
+ }
+ .hot_right {
+   width: 20%;
+   display: flex;
+   align-items: center;
+   color: red;
+   font-weight: 900;
+ }
+ .txt {
+   font-size: 14px;
+   color: #999;
+ }
+.form-group {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 20rpx;
+  box-shadow: 0 4rpx 12rpx rgba(0,0,0,0.02);
+  text-align: left;
+}
+
+.input-item {
+  display: flex;
+  align-items: center;
+  font-size: 28rpx;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+  color: #666;
+}
+
+.input-item:last-child {
+  border-bottom: none;
+}
+
+.label {
+  width: 160rpx;
+  font-size: 30rpx;
+  color: #333;
+}
+
+input {
+  flex: 1;
+  font-size: 28rpx;
+  color: #666;
+}
+
+/* 标题 */
+.section-title {
+  margin: 40rpx 0 20rpx 10rpx;
+  font-size: 32rpx;
+  font-weight: bold;
+  color: #333;
+}
+
+/* 车型列表 */
+.car-list {
+  white-space: nowrap; /* 强制不换行，实现横向滚动 */
+  padding-bottom: 20rpx;
+}
+
+.car-card {
+  display: inline-block;
+  width: 280rpx;
+  background: #fff;
+  margin-right: 24rpx;
+  border-radius: 16rpx;
+  padding: 20rpx;
+  box-sizing: border-box;
+  border: 2rpx solid transparent; /* 预留边框位置 */
+  vertical-align: top;
+  transition: all 0.2s;
+}
+
+/* 选中状态：蓝色边框 */
+.car-card.active {
+  border-color: #007AFF;
+  box-shadow: 0 8rpx 20rpx rgba(0, 122, 255, 0.15);
+}
+
+.car-card image {
+  width: 100%;
+  height: 160rpx;
+  border-radius: 12rpx;
+  margin-bottom: 20rpx;
+}
+
+.car-name {
+  display: block;
+  font-size: 28rpx;
+  font-weight: bold;
+  margin-bottom: 10rpx;
+}
+
+.car-seat {
+  display: block;
+  font-size: 24rpx;
+  color: #999;
+  margin-bottom: 15rpx;
+}
+
+.price-box {
+  display: flex;
+  align-items: baseline;
+}
+
+.original-price {
+  font-size: 20rpx;
+  color: #999;
+  text-decoration: line-through;
+  margin-right: 10rpx;
+}
+
+.current-price {
+  font-size: 36rpx;
+  color: #FF3B30; /* 红色价格 */
+  font-weight: bold;
+}
+
+/* 单选框区域 */
+.radio-group {
+  display: flex;
+  padding: 0 20rpx;
+}
+
+.radio-item {
+  margin-right: 40rpx;
+  font-size: 28rpx;
+  color: #333;
+  display: flex;
+  align-items: center;
+}
+
+/* 提交按钮 */
+.submit-btn {
+  margin-top: 60rpx;
+  background: #007AFF;
+  color: #fff;
+  text-align: center;
+  padding: 30rpx 0;
+  border-radius: 100rpx;
+  font-size: 32rpx;
+  font-weight: bold;
+  box-shadow: 0 10rpx 20rpx rgba(0, 122, 255, 0.3);
+}
+
+.placeholder {
+  text-align: center;
+  margin-top: 200rpx;
+  color: #999;
+  font-size: 28rpx;
+}
+.phoneError {
+  font-size: 24rpx;
+  color: #f56767;
+  padding-left: 100rpx;
+}
+.car_active{
+  border: 1px solid #2196F3;
+}
+.imgs {
+ width: 100%;
+ margin-top: 20rpx;
+ background-color: #fff;
+ border-radius: 10px;
+
+}
+.hot_box {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  margin: 20rpx 0;
+}
+.hot_left {
+  width: 80%;
+  display: flex;
+  
+}
+.hot_img {
+  width: 130rpx;
+  height: 100rpx;
+  border-radius: 10%;
+  overflow: hidden;
+}
+.hot_img image{
+  width: 130rpx;
+  height: 100rpx;
+  margin: 10rpx;
+}
+.hot_line {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  padding-left: 40rpx;
+  box-sizing: border-box;
+  font-size: 14px;
+  font-weight: 600;
+}
+.hot_right {
+  width: 20%;
+  display: flex;
+  align-items: center;
+  color: red;
+  font-weight: 900;
+}
+.txt {
+  font-size: 14px;
+  color: #999;
+}
