@@ -1,5 +1,6 @@
 // pages/pingche2/pingche2.js
 const throttle = require('../../utils/throttle.js').throttle;
+const unionPayWatcher = require('../../utils/unionPayWatcher.js');
 const BASE_URL = require("../../utils/BASE_URL");
 const debounce = require('../../utils/debounce');
 var baseUrl = BASE_URL.BASE_URL //配置基础url
@@ -43,6 +44,22 @@ Page({
     baseUrl: '',
     ChildPrice: '',
     actualAdultCountdata: 1, //计算最终需要按【成人票价】结算的总人数
+    // ===== 底部支付方式弹框 =====
+    paySheetShow: false, //支付方式弹框显隐
+    payType: 'union', //当前选中支付方式：union=云闪付（默认） wechat=微信
+    payTypeList: [{
+        key: 'union',
+        name: '云闪付支付',
+        tip: '选择云闪付支付随机立减',
+        tag: ''
+      },
+      {
+        key: 'wechat',
+        name: '微信支付',
+        tip: '',
+        tag: ''
+      }
+    ],
   },
   /**
    * 生命周期函数--监听页面加载
@@ -63,6 +80,7 @@ Page({
    * 生命周期函数--监听页面显示
    */
   onShow() {
+    unionPayWatcher.start(); // 兜底：冷启动后仍有待确认的云闪付订单时恢复监听
     this.setData({
       baseUrl
     })
@@ -121,52 +139,70 @@ Page({
         })
         return false;
       } else {
-        wx.showModal({
-          title: '提示',
-          content: '请确认手机号:' + _this.data.phone_number,
-          success(res) {
-            if (res.confirm) {
-              const now = new Date();
-              const hours = String(now.getHours()).padStart(2, '0'); // 获取小时并补零
-              const minutes = String(now.getMinutes()).padStart(2, '0'); // 获取分钟并补零
-              const formattedTime = `${hours}:${minutes}`;
-              let pcTimeSync = wx.getStorageSync('pcTimeSync')
-              let timeNode = _this.isTimeInRange(formattedTime, pcTimeSync.StartTime)
-              if (timeNode) {
-                _this.handleCallCar()
-              } else {
-                wx.showModal({
-                  title: '提示',
-                  content: '尊敬的乘客：距离发车时间较近，车辆调度资源紧张，为保证乘车体验，发车时间将最优安排至下单1个小时内的最快发车时段，请知悉。咨询热线：0351-6078977 感谢您的理解与耐心等候！',
-                  success(res) {
-                    if (res.confirm) {
-                      _this.handleCallCar()
-                    } else if (res.cancel) {
-                      console.log('用户点击取消')
-                    }
-                  }
-                })
-              }
-
-            } else if (res.cancel) {
-              console.log('用户单击取消');
-            }
-          }
-        });
+        // 手机号校验通过后，弹出底部支付方式选择框（替代原“请确认手机号”弹窗）
+        _this.setData({
+          paySheetShow: true
+        })
       }
     }
 
   },
+  // 底部支付方式弹框：切换支付方式
+  onPayTypeChange(e) {
+    this.setData({
+      payType: e.currentTarget.dataset.key
+    })
+  },
+  // 底部支付方式弹框：取消
+  cancelPaySheet() {
+    this.setData({
+      paySheetShow: false
+    })
+  },
+  // 阻止弹框内部滚动穿透
+  noop() {},
+  // 底部支付方式弹框：确认下单
+  confirmPaySheet() {
+    let _this = this;
+    const payType = _this.data.payType;
+    _this.setData({
+      paySheetShow: false
+    });
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0'); // 获取小时并补零
+    const minutes = String(now.getMinutes()).padStart(2, '0'); // 获取分钟并补零
+    const formattedTime = `${hours}:${minutes}`;
+    let pcTimeSync = wx.getStorageSync('pcTimeSync')
+    let timeNode = _this.isTimeInRange(formattedTime, pcTimeSync.StartTime)
+    if (timeNode) {
+      _this.handleCallCar(payType)
+    } else {
+      wx.showModal({
+        title: '提示',
+        content: '尊敬的乘客：距离发车时间较近，车辆调度资源紧张，为保证乘车体验，发车时间将最优安排至下单1个小时内的最快发车时段，请知悉。咨询热线：0351-6078977 感谢您的理解与耐心等候！',
+        success(res) {
+          if (res.confirm) {
+            _this.handleCallCar(payType)
+          } else if (res.cancel) {
+            console.log('用户点击取消')
+          }
+        }
+      })
+    }
+  },
   // 防抖处理后的主入口函数
-  handleCallCar: throttle(function () {
-    this._mainProcess();
+  handleCallCar: throttle(function (payType) {
+    this._mainProcess(payType || this.data.payType);
   }, 3000),
   // 1. 主流程控制
-  async _mainProcess() {
+  async _mainProcess(payType) {
     try {
       // 1.1 数据准备与校验
       const sessionData = this._getSessionData();
       if (!sessionData) return;
+
+      // 记录本次下单使用的支付方式，供后续支付分流
+      sessionData.payType = payType || this.data.payType;
 
       const {storageSync,phone_number} = sessionData;
 
@@ -338,20 +374,104 @@ Page({
     }
     const orderId = orderData.data.Id;
     const payAmount = orderData.data.PayAmount;
+    // 本次下单所选支付方式
+    const payType = data.payType || this.data.payType;
     // 如果金额为0，直接视为成功；否则调起支付
     if (payAmount != 0) {
-      await this._handlePayment(orderId, user.Id);
+      if (payType === 'union') {
+        // 云闪付支付：订单已创建，支付逻辑待接入
+        await this._handleUnionPay(orderId, user.Id, payAmount);
+      } else {
+        await this._handlePayment(orderId, user.Id);
+      }
     } else {
       // 0元单处理逻辑
       this._handleOrderSuccess(orderId);
     }
   },
 
+  // 5.1 云闪付支付逻辑（占位，待自行实现）
+  _handleUnionPay(orderId, memberInfoId, payAmount) {
+    // TODO: 在此编写云闪付支付逻辑
+    // console.log('云闪付支付', {
+    //   orderId: orderId,
+    //   memberInfoId: memberInfoId,
+    //   payAmount: payAmount
+    // });
+    // wx.showToast({
+    //   title: '云闪付支付逻辑待接入',
+    //   icon: 'none'
+    // });
+    // return Promise.resolve();
+    let appid = wx.getStorageSync('appId')
+    return new Promise((resolve, reject) => {
+      http.getRequest('/Api/DispatchMobile/GoUnionPay?appid=' + appid + '&Id=' + orderId + '&MemberInfoId=' + memberInfoId + "&PaymentType=2", "", wx.getStorageSync('header'), (payRes) => {
+        if (payRes.code === 0) {
+          console.log(payRes)
+          // 记录待确认订单并注册 onAppShow 监听，用户从云闪付返回后查询支付结果
+          unionPayWatcher.mark(orderId, 'dispatch');
+          wx.navigateToMiniProgram({
+            appId: payRes.data.CqpMpAppId,
+            path: payRes.data.CqpMpPath,
+            fail(err) {
+              console.log('打开云闪付失败', err);
+              unionPayWatcher.clear();
+              wx.showModal({
+                title: '提示',
+                content: '无法打开云闪付，可稍后在订单页继续支付。',
+                confirmText: '查看订单',
+                cancelText: '知道了',
+                success(r) {
+                  if (r.confirm) {
+                    wx.reLaunch({
+                      url: '/user_center/pages/payDetail/payDetail?orderId=' + orderId + '&from=orderList'
+                    });
+                  }
+                }
+              });
+            }
+          })
+
+
+
+
+
+          // const payData = payRes.data
+          // wx.requestPayment({
+          //   timeStamp: payData.TimeStamp,
+          //   nonceStr: payData.NonceStr,
+          //   package: payData.Package,
+          //   signType: payData.SignType,
+          //   paySign: payData.PaySign,
+          //   success: () => {
+          //     this._handleOrderSuccess(orderId);
+          //     resolve();
+          //   },
+          //   fail: (err) => {
+          //     console.log('支付失败', err);
+          //     this._clearStorageAndRedirect(orderId);
+          //     resolve(); // 支付失败也结束流程，避免卡死
+          //   }
+          // });
+        } else if (payRes.code === 400 && payRes.msg === "已付款") {
+          this._handleOrderSuccess(orderId);
+          resolve();
+        } else {
+          wx.showToast({
+            title: payRes.msg,
+            icon: 'none'
+          });
+          reject(payRes);
+        }
+      }, reject);
+    });
+  },
+
   // 5. 处理支付逻辑
   _handlePayment(orderId, memberInfoId) {
     let appid = wx.getStorageSync('appId')
     return new Promise((resolve, reject) => {
-      http.getRequest('/Api/DispatchMobile/GoUnionPay?appid=' + appid + '&Id=' + orderId + '&MemberInfoId=' + memberInfoId, "", wx.getStorageSync('header'), (payRes) => {
+      http.getRequest('/Api/DispatchMobile/GoUnionPay?appid=' + appid + '&Id=' + orderId + '&MemberInfoId=' + memberInfoId + "&PaymentType=1", "", wx.getStorageSync('header'), (payRes) => {
         if (payRes.code === 0) {
           const payData = payRes.data
           wx.requestPayment({

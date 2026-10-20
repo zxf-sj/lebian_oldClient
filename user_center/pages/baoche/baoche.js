@@ -5,6 +5,7 @@ import http from '../../../utils/http.js';
 const debounce = require('../../../utils/debounce');
 const app = getApp();
 const throttle = require('../../../utils/throttle.js').throttle;
+const unionPayWatcher = require('../../../utils/unionPayWatcher.js');
 Page({
 
   /**
@@ -21,6 +22,23 @@ Page({
     carType: 0, //车型选中下标
     textareaValue:"",//备注信息
     phone_number:'',
+    // ===== 底部支付方式弹框 =====
+    paySheetShow: false, //支付方式弹框显隐
+    payType: 'union', //当前选中支付方式：union=云闪付（默认） wechat=微信
+    paySheetPhone: '', //弹框展示的手机号
+    payTypeList: [{
+        key: 'union',
+        name: '云闪付支付',
+        tip: '选择云闪付支付随机立减',
+        tag: ''
+      },
+      {
+        key: 'wechat',
+        name: '微信支付',
+        tip: '',
+        tag: ''
+      }
+    ],
   },
 
   /**
@@ -42,6 +60,7 @@ Page({
    * 生命周期函数--监听页面显示
    */
   onShow() {
+    unionPayWatcher.start(); // 兜底：冷启动后仍有待确认的云闪付订单时恢复监听
     this.setData({
       baseUrl:baseUrl
     })
@@ -155,7 +174,6 @@ Page({
     // }
   },
   handletel() {
-    console.log('进来了')
     let _this = this;
     if (_this.data.phone_number == '') {
       wx.showToast({
@@ -175,45 +193,260 @@ Page({
         })
         return false;
       } else {
-        wx.showModal({
-          title: '提示',
-          content: '请确认手机号:' + _this.data.phone_number,
-          success(res) {
-            if (res.confirm) {
-              console.log('用户单击确定');
-              const now = new Date();
-              const hours = String(now.getHours()).padStart(2, '0'); // 获取小时并补零
-              const minutes = String(now.getMinutes()).padStart(2, '0'); // 获取分钟并补零
-              const formattedTime = `${hours}:${minutes}`;
-              let pcTimeSync = wx.getStorageSync('pcTimeSync')
-              console.log(formattedTime,pcTimeSync.StartTime)
-              let timeNode =  _this.isTimeInRange(formattedTime,pcTimeSync.StartTime)
-              // let timeNode =  _this.isTimeInRange('10:44',"11:00")
-              console.log(timeNode)
-              if(timeNode) {
-                _this.callCar()
-              } else {
-                wx.showModal({
-                  title: '提示',
-                  content: '尊敬的乘客：距离发车时间较近，车辆调度资源紧张，为保证乘车体验，发车时间将最优安排至下单1个小时内的最快发车时段，请知悉。咨询热线：0351-6078977 感谢您的理解与耐心等候！',
-                  success (res) {
-                    if (res.confirm) {
-                      console.log('用户点击确定')
-                      _this.callCar()
-                    } else if (res.cancel) {
-                      console.log('用户点击取消')
-                    }
-                  }
-                })
-              }
-            } else if (res.cancel) {
-              console.log('用户单击取消');
-            }
-          }
-        });
+        // 手机号校验通过后，弹出底部支付方式选择框（替代原“请确认手机号”弹窗）
+        _this.setData({
+          paySheetShow: true,
+          paySheetPhone: _this.data.phone_number
+        })
       }
     }
 
+  },
+  // 底部支付方式弹框：切换支付方式
+  onPayTypeChange(e) {
+    this.setData({
+      payType: e.currentTarget.dataset.key
+    })
+  },
+  // 底部支付方式弹框：取消
+  cancelPaySheet() {
+    this.setData({
+      paySheetShow: false
+    })
+  },
+  // 阻止弹框内部滚动穿透
+  noop() {},
+  // 底部支付方式弹框：确认
+  confirmPaySheet() {
+    let _this = this;
+    const payType = _this.data.payType;
+    _this.setData({
+      paySheetShow: false
+    });
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0'); // 获取小时并补零
+    const minutes = String(now.getMinutes()).padStart(2, '0'); // 获取分钟并补零
+    const formattedTime = `${hours}:${minutes}`;
+    let pcTimeSync = wx.getStorageSync('pcTimeSync')
+    console.log(formattedTime, pcTimeSync.StartTime)
+    let timeNode = _this.isTimeInRange(formattedTime, pcTimeSync.StartTime)
+    console.log(timeNode)
+    if (timeNode) {
+      _this.callCar(payType)
+    } else {
+      wx.showModal({
+        title: '提示',
+        content: '尊敬的乘客：距离发车时间较近，车辆调度资源紧张，为保证乘车体验，发车时间将最优安排至下单1个小时内的最快发车时段，请知悉。咨询热线：0351-6078977 感谢您的理解与耐心等候！',
+        success(res) {
+          if (res.confirm) {
+            console.log('用户点击确定')
+            _this.callCar(payType)
+          } else if (res.cancel) {
+            console.log('用户点击取消')
+          }
+        }
+      })
+    }
+  },
+  // ===== 支付流程公共状态与工具 =====
+  _payBusy: false, //下单/支付流程进行中，忽略重复点击，避免产生多笔订单
+  _showPayLoading() {
+    wx.showLoading({
+      title: this.data.dispatchListId ? '车辆调度中' : '加载中...',
+      mask: true
+    });
+  },
+  // 流程终止（失败/取消）统一收尾：关 loading 并释放提交锁
+  _finishPayFlow() {
+    this._payBusy = false;
+    wx.hideLoading();
+  },
+  // 下单成功后清理行程草稿缓存，避免下次进入页面残留上一次的选择
+  _clearOrderDraft() {
+    ['starInfo2', 'endInfo2', 'storageSync', 'pcTimeSync', 'personNum', 'pcTypeId', 'textareaValue', 'phoneStr', 'lineId'].forEach(function (key) {
+      wx.removeStorageSync(key);
+    });
+  },
+  _goPayDetail(orderId) {
+    wx.reLaunch({
+      url: '/user_center/pages/payDetail/payDetail?orderId=' + orderId + '&from=orderList'
+    });
+  },
+  // 云闪付支付逻辑：跳转云闪付小程序，返回后经 onAppShow(1038) 查询订单支付状态
+  _handleUnionPay(orderId, memberInfoId) {
+    console.log(orderId, memberInfoId)
+    let that = this;
+    let appid = wx.getStorageSync('appId');
+    http.getRequest('/Api/DispatchMobile/GoUnionPay?appid=' + appid + '&Id=' + orderId + '&MemberInfoId=' + memberInfoId + "&PaymentType=2", "", wx.getStorageSync('header'), (res) => {
+      console.log(res);
+      if (res.code != 0) {
+        that._finishPayFlow();
+        wx.showToast({
+          title: res.msg || '获取支付信息失败，请稍后重试',
+          icon: 'none',
+          duration: 2000
+        });
+        return;
+      }
+      that._finishPayFlow();
+      let payData = res.data || {};
+      // 记录待确认订单并注册 onAppShow 监听，用户从云闪付返回后查询支付结果
+      unionPayWatcher.mark(orderId, 'dispatch');
+      wx.navigateToMiniProgram({
+        appId: payData.CqpMpAppId,
+        path: payData.CqpMpPath,
+        fail(err) {
+          console.log('打开云闪付失败', err);
+          unionPayWatcher.clear();
+          wx.showModal({
+            title: '提示',
+            content: '无法打开云闪付，可稍后在订单页继续支付。',
+            confirmText: '查看订单',
+            cancelText: '知道了',
+            success(r) {
+              if (r.confirm) that._goPayDetail(orderId);
+            }
+          });
+        }
+      });
+    }, (err) => {
+      console.log(err);
+      that._finishPayFlow();
+      wx.showToast({
+        title: '获取支付信息失败，请稍后重试',
+        icon: 'none',
+        duration: 2000
+      });
+    });
+  },
+  // 换取支付参数并唤起微信收银台（原两条分支中的重复实现收敛到这里）
+  _launchWechatPay(orderId, memberInfoId) {
+    console.log(orderId, memberInfoId)
+    let that = this;
+    let appid = wx.getStorageSync('appId');
+    http.getRequest('/Api/DispatchMobile/GoUnionPay?appid=' + appid + '&Id=' + orderId + '&MemberInfoId=' + memberInfoId + "&PaymentType=1", "", wx.getStorageSync('header'), (res) => {
+      console.log(res);
+      if (res.code != 0) {
+        that._finishPayFlow();
+        wx.showToast({
+          title: res.msg || '获取支付信息失败，请稍后重试',
+          icon: 'none',
+          duration: 2000
+        });
+        return;
+      }
+      wx.hideLoading();
+      let payData = res.data || {};
+      console.log('拉起支付');
+      wx.requestPayment({
+        timeStamp: payData.TimeStamp,
+        nonceStr: payData.NonceStr,
+        package: payData.Package,
+        signType: payData.SignType,
+        paySign: payData.PaySign,
+        success() {
+          that._clearOrderDraft();
+          wx.showToast({
+            title: '支付成功',
+            icon: 'success',
+            duration: 2000,
+            success: function () {
+              that.setSubscribeMessage();
+              setTimeout(function () {
+                that._goPayDetail(orderId);
+              }, 1000);
+            }
+          });
+        },
+        // 支付失败或用户取消：订单已创建，引导到详情页继续支付，避免丢单
+        fail(err) {
+          console.log('拉起支付失败', err);
+          that._finishPayFlow();
+          setTimeout(function () {
+            that._goPayDetail(orderId);
+          }, 1000);
+        }
+      });
+    }, (err) => {
+      console.log(err);
+      that._finishPayFlow();
+      wx.showToast({
+        title: '获取支付信息失败，请稍后重试',
+        icon: 'none',
+        duration: 2000
+      });
+    });
+  },
+  // 创建包车订单：无历史订单与“继续下单”两条入口共用
+  _createOrder(reqData, memberInfoId) {
+    console.log(reqData, memberInfoId)
+    let that = this;
+    that._showPayLoading();
+    wx.request({
+      url: baseUrl + '/Api/DispatchMobile/CreatePersonTicketOrder',
+      data: reqData,
+      method: 'POST',
+      success(res) {
+        console.log(res)
+        let ress = res.data
+        if (ress.code != '0' || !ress.data) {
+          that._finishPayFlow();
+          wx.showToast({
+            title: ress.msg || '下单失败，请稍后重试',
+            icon: 'none',
+            duration: 2000
+          });
+          return;
+        }
+        let orderId = ress.data.Id;
+        console.log(orderId)
+        // 按弹框所选支付方式分流：union=云闪付（占位） wechat=微信（原逻辑）
+        if (that.data.payType === 'union') {
+          that._finishPayFlow();
+          console.log(orderId)
+          that._handleUnionPay(orderId,memberInfoId);
+          return;
+        }
+        console.log(orderId, memberInfoId)
+        that._launchWechatPay(orderId, memberInfoId);
+      },
+      // 原实现缺失 fail 回调，网络异常时会一直卡在 loading
+      fail(err) {
+        console.log('下单请求失败', err);
+        that._finishPayFlow();
+        wx.showToast({
+          title: '网络异常，请稍后重试',
+          icon: 'none',
+          duration: 2000
+        });
+      }
+    });
+  },
+  // 当日已有订单：列出历史订单，由用户选择取消下单或继续下单
+  _showDayOrderModal(list, onContinue) {
+    let that = this;
+    let str = '';
+    (list || []).forEach(function (item) {
+      str += item.PassengerLineId_Name + ',' + '订单号为:' + item.Code + '\n';
+    });
+    wx.showModal({
+      title: '下单记录',
+      content: str,
+      cancelText: '取消下单',
+      confirmText: '继续下单',
+      complete: (res) => {
+        if (res.confirm) {
+          onContinue();
+        } else {
+          that._finishPayFlow();
+          if (res.cancel) {
+            wx.navigateTo({
+              url: '/pages/index/index',
+            });
+          }
+        }
+      }
+    });
   },
  
  isTimeInRange(currentTime, selectedTime) {
@@ -225,320 +458,105 @@ Page({
   // 其他所有情况都返回 true
   return true; 
 },
-  // 叫车
-  callCar:throttle(function(){
+  // 叫车（下单 + 支付入口）
+  callCar: throttle(function (payType) {
     let _this = this;
-    const phoneStr = wx.getStorageSync('phoneStr');
-    var openid = wx.getStorageSync('openid');
-    if(!openid){
+    if (_this._payBusy) {
+      return false; // 上一次下单/支付尚未结束，忽略重复点击，防止重复下单
+    }
+    if (payType) _this.setData({
+      payType: payType
+    });
+    _this._payBusy = true;
+
+    let openid = wx.getStorageSync('openid');
+    if (!openid) {
+      _this._finishPayFlow();
       wx.navigateTo({
         url: '/user_center/pages/login/login',
-      })
+      });
       return false;
     }
-    var user = wx.getStorageSync('userInfo');//用
-    var startInfo = wx.getStorageSync('starInfo2'); 
-    var endInfo = wx.getStorageSync('endInfo2');
-    var storageSync = wx.getStorageSync('storageSync')
-    var pcTimeSync = wx.getStorageSync('pcTimeSync')
-    var pcTypeId = wx.getStorageSync('pcTypeId');
-    var note = wx.getStorageSync('textareaValue');
-    var startDate = storageSync.startDate;
-    if(!startInfo.startAddress){
+    let user = wx.getStorageSync('userInfo') || {};
+    console.log(user)
+    let startInfo = wx.getStorageSync('starInfo2') || {};
+    let endInfo = wx.getStorageSync('endInfo2') || {};
+    let storageSync = wx.getStorageSync('storageSync') || {};
+    let pcTimeSync = wx.getStorageSync('pcTimeSync') || {};
+    let pcTypeId = wx.getStorageSync('pcTypeId');
+    let startDate = storageSync.startDate;
+
+    // 参数校验集中处理，命中即提示并释放提交锁
+    let invalidMsg = (!startInfo.startAddress && '请选择出发乘车位置') ||
+      (!endInfo.endAddress && '请选择下车位置') ||
+      (!_this.data.phone_number && '请填写联系方式') ||
+      (!pcTimeSync.StartTime && '请选择出发时间');
+    if (invalidMsg) {
+      _this._finishPayFlow();
       wx.showToast({
-        title: '请选择出发乘车位置',
-        icon:'none',
-        duration:2000
-      })
-      return false;
-    }
-    if(!endInfo.endAddress){
-      wx.showToast({
-        title: '请选择下车位置',
-        icon:'none',
-        duration:2000
-      })
-      return false;
-    }
-    if (_this.data.phone_number == '') {
-      wx.showToast({
-        title: '请填写联系方式',
+        title: invalidMsg,
         icon: 'none',
         duration: 2000
-      })
+      });
       return false;
     }
-    console.log(pcTimeSync)
-    console.log(pcTimeSync.StartTime)
-    if (!pcTimeSync.StartTime) {
-      wx.showToast({
-        title: '请选择出发时间',
-        icon: 'none',
-        duration: 2000
-      })
-      return false;
-    }
-    let starTime =  pcTimeSync.StartTime.split(':')[0] + ':59:00'  
-    let ArrivalTime =  startDate + ' ' + starTime
+
+    let starTime = pcTimeSync.StartTime.split(':')[0] + ':59:00';
+    let ArrivalTime = startDate + ' ' + starTime;
     let reqData = {
-      PassengerLineId:storageSync.lineId,
-      IntoLocation:startInfo.startAddress,
-      IntoLongitude:startInfo.startLont,
-      IntoLatitude:startInfo.startLait,
-      OffLocation:endInfo.endAddress,
-      OffLongitude:endInfo.endLont,
-      OffLatitude:endInfo.endLait,
-      Departure:"100004-0000980002",
-      ArrivalTime:ArrivalTime,
-      Personal:user.Id,
-      DispatchListId:"",
-      IsReservation:"100004-0000010002",
-      CouponDetailsId:pcTimeSync.hasChooseId?pcTimeSync.hasChooseId:"",
-      PersonalIds:_this.data.phone_number,
-      Note:_this.data.textareaValue,
-      IsExclusive:"100004-0000010001",
-      IsPickGoods:'100004-0000010002',
-      SelectCarType:pcTypeId, 
-      OrderSource:"小程序",
-      priceType:'100004-0001270001',
-      AdultNumber:1,//成人数
-      ChildNum:0,//儿童数
+      PassengerLineId: storageSync.lineId,
+      IntoLocation: startInfo.startAddress,
+      IntoLongitude: startInfo.startLont,
+      IntoLatitude: startInfo.startLait,
+      OffLocation: endInfo.endAddress,
+      OffLongitude: endInfo.endLont,
+      OffLatitude: endInfo.endLait,
+      Departure: "100004-0000980002",
+      ArrivalTime: ArrivalTime,
+      Personal: user.Id,
+      DispatchListId: "",
+      IsReservation: "100004-0000010002",
+      CouponDetailsId: pcTimeSync.hasChooseId ? pcTimeSync.hasChooseId : "",
+      PersonalIds: _this.data.phone_number,
+      Note: _this.data.textareaValue,
+      IsExclusive: "100004-0000010001",
+      IsPickGoods: '100004-0000010002',
+      SelectCarType: pcTypeId,
+      OrderSource: "小程序",
+      priceType: '100004-0001270001',
+      AdultNumber: 1, //成人数
+      ChildNum: 0, //儿童数
     };
-    console.log('查线路')
-    http.getRequest('/Api/DispatchMobile/IsUserHaveDayOrder?phone='+_this.data.phone_number+'&timeDay='+startDate,'','', res => {
-      console.log(res)
-      if(res.code==0){
-        if(res.count==0){
-          if(this.data.dispatchListId){
-            wx.showLoading({
-              title: '车辆调度中',
-            })
-          }else{
-            wx.showLoading({
-              title: '加载中...',
-            })
-          }
-          let that = this;
-          console.log('下单')
-          wx.request({
-            url: baseUrl + '/Api/DispatchMobile/CreatePersonTicketOrder',
-            data:reqData,
-            method:"POST",
-            success(res) {
-              var ress = res.data
-              console.log(ress)
-              if (ress.code == '0') {
-                  wx.hideLoading();
-                  console.log('拿支付信息')
-                  let appid = wx.getStorageSync('appId')
-                  http.getRequest('/Api/DispatchMobile/GoUnionPay?appid=' + appid + '&Id=' + ress.data.Id + '&MemberInfoId=' + user.Id, "", wx.getStorageSync('header'), (res) => {
-                    console.log(res)
-                    if (res.code == 0) {
-                      var payData = res.data
-                      wx.requestPayment({
-                        timeStamp: payData.TimeStamp,
-            nonceStr: payData.NonceStr,
-            package: payData.Package,
-            signType: payData.SignType,
-            paySign: payData.PaySign,
-                        success(res) {
-                          console.log('回调',res)
-                          wx.removeStorageSync('starInfo2'); 
-                          wx.removeStorageSync('endInfo2');
-                          wx.removeStorageSync('storageSync')
-                          wx.removeStorageSync('pcTimeSync')
-                          wx.removeStorageSync('personNum')
-                          wx.removeStorageSync('pcTypeId');
-                          wx.removeStorageSync('textareaValue');
-                          wx.removeStorageSync('phoneStr')
-                          wx.removeStorageSync('lineId');
-                          console.log('拉起支付')
-                          wx.showToast({
-                            title: '支付成功',
-                            icon: 'success',
-                            duration: 2000,
-                            success: function () {
-                              console.log('支付成功')
-                              that.setSubscribeMessage();
-                              setTimeout(function () {
-                                wx.reLaunch({
-                                  url: '/user_center/pages/payDetail/payDetail?orderId=' + ress.data.Id + "&from=orderList"
-                                })
-                              }, 1000)
-                             
-                              // if (that.data.orderDetail.IsPickGoods == '100004-0000010002') {
-                              //   setTimeout(function () {
-                              //     wx.redirectTo({
-                              //       url: '/user_center/pages/payDetail/payDetail?orderId=' + that.data.orderDetail.Id,
-                              //     })
-                              //   }, 3000)
-                              // } else {
-                              //   setTimeout(function () {
-                              //     wx.redirectTo({
-                              //       url: '/user_center/pages/travelList/travelList?menuTapCurrent=1',
-                              //     })
-                              //   }, 3000)
-                              // }
-                            }
-                          })
-                        },
-                        fail(res) {
-                          console.log('拉起支付失败',res)
-                          setTimeout(function () {
-                            wx.reLaunch({
-                              url: '/user_center/pages/payDetail/payDetail?orderId=' + ress.data.Id + "&from=orderList"
-                            })
-                          }, 1000)
-                        }
-                      })
-                    } else {
-                      wx.showToast({
-                        title: res.msg,
-                        icon: 'success',
-                        duration: 2000,
-                      })
-                    }
-                  }, (err) => {
-                    console.log(err)
-                  })
-                 
-              }else{
-                wx.showToast({
-                  title: ress.msg,
-                  icon:'none',
-                  duration:2000
-                })
-              }
-            },
-          })
-        }else{
-          var list = res.data;
-          var str ="";
-          list.forEach(function(item,index){
-            str += item.PassengerLineId_Name+","+"订单号为:"+item.Code+"\n"
-          });
-          wx.showModal({
-            title: '下单记录',
-            content: str,
-            cancelText:"取消下单",
-            confirmText:"继续下单",
-            complete: (res) => {
-              if (res.cancel) {
-                wx.navigateTo({
-                  url: '/pages/index/index',
-                }) 
-              }
-              if (res.confirm) {
-                if(this.data.dispatchListId){
-                  wx.showLoading({
-                    title: '车辆调度中',
-                  })
-                }else{
-                  wx.showLoading({
-                    title: '加载中...',
-                  })
-                }
-                let that = this;
-                console.log('去下单',reqData)
-                if (!pcTimeSync.StartTime) {
-                  wx.showToast({
-                    title: '请选择出发时间',
-                    icon: 'none',
-                    duration: 2000
-                  })
-                  return false;
-                }
-                wx.request({
-                  url: baseUrl + '/Api/DispatchMobile/CreatePersonTicketOrder',
-                  data:reqData,
-                  method:"POST",
-                  success(res) {
-                    console.log(res)
-                    var ress = res.data
-                    if (ress.code == '0') {
-                        wx.hideLoading();
-                        console.log('拿支付信息')
-                        let appid = wx.getStorageSync('appId')
-                        http.getRequest('/Api/DispatchMobile/GoUnionPay?appid=' + appid + '&Id=' + ress.data.Id + '&MemberInfoId=' + user.Id, "", wx.getStorageSync('header'), (res) => {
-                          console.log(res)
-                          if (res.code == 0) {
-                            var payData = res.data
-                            console.log('拉起支付')
-                            wx.requestPayment({
-                              timeStamp: payData.TimeStamp,
-            nonceStr: payData.NonceStr,
-            package: payData.Package,
-            signType: payData.SignType,
-            paySign: payData.PaySign,
-                              success(res) {
-                                console.log('回调',res)
-                                wx.removeStorageSync('starInfo2'); 
-                                wx.removeStorageSync('endInfo2');
-                                wx.removeStorageSync('storageSync')
-                                wx.removeStorageSync('pcTimeSync')
-                                wx.removeStorageSync('personNum')
-                                wx.removeStorageSync('pcTypeId');
-                                wx.removeStorageSync('textareaValue');
-                                wx.removeStorageSync('phoneStr')
-                                wx.removeStorageSync('lineId');
-                                console.log('支付成功')
-                                wx.showToast({
-                                  title: '支付成功',
-                                  icon: 'success',
-                                  duration: 2000,
-                                  success: function () {
-                                    that.setSubscribeMessage();
-                                    setTimeout(function () {
-                                      wx.reLaunch({
-                                        url: '/user_center/pages/payDetail/payDetail?orderId=' + ress.data.Id + "&from=orderList"
-                                      })
-                                    }, 1000)
-                                  }
-                                })
-                              },
-                              fail(res) {
-                                console.log('拉起支付失败',res)
-                                setTimeout(function () {
-                                  wx.reLaunch({
-                                    url: '/user_center/pages/payDetail/payDetail?orderId=' + ress.data.Id + "&from=orderList"
-                                  })
-                                }, 1000)
-                              }
-                            })
-                          } else {
-                            wx.showToast({
-                              title: res.msg,
-                              icon: 'success',
-                              duration: 2000,
-                            })
-                          }
-                        }, (err) => {
-                          console.log(err)
-                        })
-                       
-                    }else{
-                      wx.showToast({
-                        title: ress.msg,
-                        icon:'none',
-                        duration:2000
-                      })
-                    }
-                  },
-                })
-              }
-            }
-          })
-        }
-      }else{
+
+    // 先查该手机号当日是否已有订单，再决定直接下单还是让用户确认
+    http.getRequest('/Api/DispatchMobile/IsUserHaveDayOrder?phone=' + _this.data.phone_number + '&timeDay=' + startDate, '', '', (res) => {
+      if (res.code != 0) {
+        _this._finishPayFlow();
         wx.showToast({
-          title: '数据请求失败，请稍后重试111',
-          icon:"error"
-        })
+          title: '数据请求失败，请稍后重试',
+          icon: 'none',
+          duration: 2000
+        });
+        return;
       }
-    }, err => {
-      console.log(1111,err)
-    })
-  },5000),
+      console.log(user.Id)
+      if (!res.count) {
+        _this._createOrder(reqData, user.Id);
+      } else {
+        _this._showDayOrderModal(res.data, function () {
+          _this._createOrder(reqData, user.Id);
+        });
+      }
+    }, (err) => {
+      console.log(err);
+      _this._finishPayFlow();
+      wx.showToast({
+        title: '数据请求失败，请稍后重试',
+        icon: 'none',
+        duration: 2000
+      });
+    });
+  }, 5000),
   setSubscribeMessage:function(){
     wx.showModal({
       title: '提示',

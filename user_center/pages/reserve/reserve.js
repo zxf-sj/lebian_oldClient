@@ -31,6 +31,10 @@ Page({
   onLoad(options) {
     let _this = this;
     let storedData = wx.getStorageSync('storageSync') || {};
+    console.log(storedData)
+    _this.setData({
+      startDate:storedData.startDate
+    })
     let updatedData = {
       ...storedData,
       startDate: _this.getFutureDate2(0)

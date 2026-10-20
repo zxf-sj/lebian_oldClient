@@ -69,7 +69,7 @@
           <button type="warn" size="mini" catchtap="cancel" data-ids="{{item.Id}}">取消</button>
         </view>
         <view class="btn-area" wx:if="{{item.BtnPay}}">
-          <button type="primary" size="mini" catchtap="gotopay" data-ids="{{item.Id}}">支付</button>
+          <button type="primary" size="mini" catchtap="gotopay" data-ids="{{item.Id}}" data-phone="{{item.PersonalIds || item.DeliverGoodsTel || item.TakeOverGoodsTel}}">支付</button>
         </view>
         <view class="btn-area" wx:if="{{item.BtnRefund}}">
           <button size="mini" catchtap="tuikuan" data-time="{{item.ArrivalTime}}" data-ids="{{item.Id}}" class="tuik">取消订单并申请退款</button>
@@ -176,7 +176,7 @@
           <button type="warn" size="mini" catchtap="cancel" data-ids="{{item.Id}}">取消</button>
         </view>
         <view class="btn-area" wx:if="{{item.BtnPay}}">
-          <button type="primary" size="mini" catchtap="gotopay" data-ids="{{item.Id}}">支付</button>
+          <button type="primary" size="mini" catchtap="gotopay" data-ids="{{item.Id}}" data-phone="{{item.PersonalIds || item.DeliverGoodsTel || item.TakeOverGoodsTel}}">支付</button>
         </view>
         <view class="btn-area" wx:if="{{item.BtnRefund}}">
           <button size="mini" catchtap="tuikuan" data-time="{{item.ArrivalTime}}" data-ids="{{item.Id}}" class="tuik">取消订单并申请退款</button>
@@ -284,7 +284,7 @@
           <button type="warn" size="mini" catchtap="cancel_bus" data-ids="{{item.Id}}">取消</button>
         </view>
         <view class="btn-area" wx:if="{{item.BtnPay}}">
-          <button type="primary" size="mini" catchtap="gotopay2" data-ids="{{item.Id}}">支付</button>
+          <button type="primary" size="mini" catchtap="gotopay2" data-ids="{{item.Id}}" data-phone="{{item.PassengerPhone}}">支付</button>
         </view>
         <view class="btn-area" wx:if="{{item.BtnRefund}}">
           <button size="mini" catchtap="tuikuan" data-time="{{item.ArrivalTime}}" data-ids="{{item.Id}}" class="tuik">取消订单并申请退款</button>
@@ -348,3 +348,26 @@
   </view>
 </view>
 <custom-input-modal show="{{modalShow}}" title="取消订单并申请退款" placeholder="请输入退款原因" prompt="{{prompt}}" value="{{modalValue}}" bind:confirm="onConfirm" bind:cancel="onCancel" />
+
+<!-- 底部支付方式弹框 -->
+<view class="pay-mask" wx:if="{{paySheetShow}}" catchtouchmove="noop" bind:tap="cancelPaySheet">
+  <view class="pay-sheet" catchtap="noop">
+    <view class="pay-sheet-head">
+      <view class="pay-sheet-title">请确认手机号</view>
+      <view class="pay-sheet-close" bind:tap="cancelPaySheet">×</view>
+    </view>
+    <view class="pay-sheet-phone">{{paySheetPhone}}</view>
+    <view class="pay-sheet-label">支付方式</view>
+    <view class="pay-option {{payType === item.key ? 'pay-option-active' : ''}}" wx:for="{{payTypeList}}" wx:key="key" data-key="{{item.key}}" bind:tap="onPayTypeChange">
+      <view class="pay-option-left">
+        <view class="pay-option-name">{{item.name}}</view>
+        <view class="pay-option-tags" wx:if="{{item.tip || item.tag}}">
+          <text class="pay-option-tip" wx:if="{{item.tip}}">{{item.tip}}</text>
+          <text class="pay-option-tag" wx:if="{{item.tag}}">{{item.tag}}</text>
+        </view>
+      </view>
+      <view class="pay-radio {{payType === item.key ? 'pay-radio-active' : ''}}"></view>
+    </view>
+    <view class="pay-sheet-btn" bind:tap="confirmPaySheet">确认支付</view>
+  </view>
+</view>

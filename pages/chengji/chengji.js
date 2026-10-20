@@ -278,6 +278,7 @@ Page({
       type = 'sh'
     } else if (e.currentTarget.dataset.item == 3) {
       type = 'cj'
+      return
     }
     this.setData({
       car_type: e.currentTarget.dataset.item,

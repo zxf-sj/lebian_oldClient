@@ -94,4 +94,27 @@
     </view>
     <!-- 显示备注信息 -->
   <remarks bind:textareaValue="handleTextareaValue" wx:if="{{remark}}" remark="{{remark}}" />
+
+  <!-- 底部支付方式弹框 -->
+  <view class="pay-mask" wx:if="{{paySheetShow}}" catchtouchmove="noop" bind:tap="cancelPaySheet">
+    <view class="pay-sheet" catchtap="noop">
+      <view class="pay-sheet-head">
+        <view class="pay-sheet-title">请确认手机号</view>
+        <view class="pay-sheet-close" bind:tap="cancelPaySheet">×</view>
+      </view>
+      <view class="pay-sheet-phone">{{paySheetPhone}}</view>
+      <view class="pay-sheet-label">支付方式</view>
+      <view class="pay-option {{payType === item.key ? 'pay-option-active' : ''}}" wx:for="{{payTypeList}}" wx:key="key" data-key="{{item.key}}" bind:tap="onPayTypeChange">
+        <view class="pay-option-left">
+          <view class="pay-option-name">{{item.name}}</view>
+          <view class="pay-option-tags" wx:if="{{item.tip || item.tag}}">
+            <text class="pay-option-tip" wx:if="{{item.tip}}">{{item.tip}}</text>
+            <text class="pay-option-tag" wx:if="{{item.tag}}">{{item.tag}}</text>
+          </view>
+        </view>
+        <view class="pay-radio {{payType === item.key ? 'pay-radio-active' : ''}}"></view>
+      </view>
+      <view class="pay-sheet-btn" bind:tap="confirmPaySheet">确认支付并下单</view>
+    </view>
+  </view>
 </view>

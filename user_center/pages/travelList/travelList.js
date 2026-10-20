@@ -1,6 +1,7 @@
 import http from '../../../utils/http';
 import dateTimePicker from '../../../utils/datepicker.js';
 const throttle = require('../../../utils/throttle.js').throttle;
+const unionPayWatcher = require('../../../utils/unionPayWatcher.js');
 const app = getApp();
 let d30 = new Date().getTime() + 1800000;
 let date = new Date(d30);
@@ -47,7 +48,26 @@ Page({
     tempIndex: 0, // 临时选中的索引
     selectedValue: '',
     StartDay: '',
-    EndDay: ''
+    EndDay: '',
+    // ===== 底部支付方式弹框 =====
+    paySheetShow: false, //支付方式弹框显隐
+    payType: 'union', //当前选中支付方式：union=云闪付（默认） wechat=微信
+    paySheetPhone: '', //弹框展示的手机号
+    paySheetOrderId: '', //待支付订单号
+    paySheetMode: 1, //1=gotopay链路 2=gotopay2链路
+    payTypeList: [{
+        key: 'union',
+        name: '云闪付支付',
+        tip: '选择云闪付支付随机立减',
+        tag: ''
+      },
+      {
+        key: 'wechat',
+        name: '微信支付',
+        tip: '',
+        tag: ''
+      }
+    ]
   },
   onLoad: function (options) {
     if (options.menuTapCurrent == 1) {
@@ -57,6 +77,7 @@ Page({
     }
   },
   onShow() {
+    unionPayWatcher.start(); // 兜底：冷启动后仍有待确认的云闪付订单时恢复监听
     this.getFormTypeId();
     const _this = this;
     let date = new Date();
@@ -671,11 +692,116 @@ Page({
   },
   //付款
   gotopay: throttle(function (e) {
-    let that = this;
     var orderId = e.currentTarget.dataset.ids;
+    // 点击支付：先弹出底部支付方式选择框
+    this.setData({
+      paySheetShow: true,
+      paySheetOrderId: orderId,
+      paySheetMode: 1,
+      paySheetPhone: e.currentTarget.dataset.phone || ''
+    })
+  }, 3000),
+  // 底部支付方式弹框：切换支付方式
+  onPayTypeChange(e) {
+    this.setData({
+      payType: e.currentTarget.dataset.key
+    })
+  },
+  // 底部支付方式弹框：取消
+  cancelPaySheet() {
+    this.setData({
+      paySheetShow: false
+    })
+  },
+  // 阻止弹框内部滚动穿透
+  noop() {},
+  // 底部支付方式弹框：确认支付
+  confirmPaySheet() {
+    let _this = this;
+    const payType = _this.data.payType;
+    const orderId = _this.data.paySheetOrderId;
+    _this.setData({
+      paySheetShow: false
+    });
+    if (!orderId) return;
     var user = wx.getStorageSync('userInfo');
+    if (payType === 'union') {
+      // 云闪付支付：逻辑待接入
+      _this._handleUnionPay(orderId, user.Id);
+    } else if (_this.data.paySheetMode === 2) {
+      // 微信支付：大巴单原支付逻辑
+      _this._doGoToPay2(orderId, user);
+    } else {
+      // 微信支付：原支付逻辑
+      _this._doGoToPay(orderId, user);
+    }
+  },
+  // 云闪付支付逻辑：跳转云闪付小程序，返回后经 onAppShow(1038) 查询订单支付状态
+  _handleUnionPay(orderId, memberInfoId) {
+    let that = this;
     let appid = wx.getStorageSync('appId')
-    http.getRequest('/Api/DispatchMobile/GoUnionPayOrderRide?appid=' + appid + '&Id=' + orderId + '&MemberInfoId=' + user.Id, "", wx.getStorageSync('header'), (LayerOrderRes) => {
+    console.log('云闪付支付逻辑')
+    http.getRequest('/Api/DispatchMobile/GoUnionPayOrderRide?appid=' + appid + '&Id=' + orderId + '&MemberInfoId=' + memberInfoId + "&PaymentType=2", "", wx.getStorageSync('header'), (LayerOrderRes) => {
+      console.log('请求成功', LayerOrderRes)
+      if (LayerOrderRes.code == 0) {
+        console.log('获取支付所需信息成功')
+        var payData = LayerOrderRes.data || {}
+        // 记录待确认订单并注册 onAppShow 监听，用户从云闪付返回后查询支付结果
+        unionPayWatcher.mark(orderId, 'bus');
+        wx.navigateToMiniProgram({
+          appId: payData.CqpMpAppId,
+          path: payData.CqpMpPath,
+          fail(err) {
+            console.log('打开云闪付失败', err)
+            unionPayWatcher.clear();
+            wx.showModal({
+              title: '提示',
+              content: '无法打开云闪付，可稍后在订单页继续支付。',
+              confirmText: '查看订单',
+              cancelText: '知道了',
+              success(r) {
+                if (r.confirm) {
+                  wx.reLaunch({
+                    url: '/user_center/pages/payDetail/payDetail?orderId=' + orderId + "&from=orderList"
+                  })
+                }
+              }
+            })
+          }
+        })
+      } else if (LayerOrderRes.code == 400 && LayerOrderRes.msg == "已付款") {
+        wx.showModal({
+          title: '预约成功',
+          content: '订单已预约成功，司机将会在您出发前一小时联系你',
+          showCancel: false, // 隐藏取消按钮，强制用户点击确认
+          confirmText: '我知道了',
+
+          success: function () {
+            that.setSubscribeMessage();
+            setTimeout(function () {
+              wx.reLaunch({
+                url: '/user_center/pages/payDetail/payDetail?orderId=' + orderId + "&from=orderList"
+              })
+            }, 1000)
+          }
+        })
+      } else {
+        console.log('获取支付所需信息失败')
+        wx.showToast({
+          title: LayerOrderRes.msg,
+          icon: 'none',
+          duration: 2000,
+        })
+      }
+    }, (LayerOrderRrr) => {
+      console.log('请求失败', LayerOrderRrr)
+    })
+  },
+  // 原微信支付逻辑（普通单）
+  _doGoToPay(orderId, user) {
+    let that = this;
+    let appid = wx.getStorageSync('appId')
+    http.getRequest('/Api/DispatchMobile/GoUnionPayOrderRide?appid=' + appid + '&Id=' + orderId + '&MemberInfoId=' + user.Id + "&PaymentType=1", "", wx.getStorageSync('header'), (LayerOrderRes) => {
       console.log('请求成功', LayerOrderRes)
       if (LayerOrderRes.code == 0) {
         console.log('获取支付所需信息成功')
@@ -740,49 +866,48 @@ Page({
     }, (LayerOrderRrr) => {
       console.log('请求失败', LayerOrderRrr)
     })
-  }, 3000),
+  },
    //付款2
    gotopay2: throttle(function (e) {
-    let that = this;
     var orderId = e.currentTarget.dataset.ids;
-    var user = wx.getStorageSync('userInfo');
+    // 点击支付：先弹出底部支付方式选择框
+    this.setData({
+      paySheetShow: true,
+      paySheetOrderId: orderId,
+      paySheetMode: 2,
+      paySheetPhone: e.currentTarget.dataset.phone || ''
+    })
+  }, 3000),
+  // 大巴单支付逻辑（PaymentType=2，实际为云闪付跳转）
+  _doGoToPay2(orderId, user) {
+    let that = this;
     let appid = wx.getStorageSync('appId')
-    http.getRequest('/api/BusMobile/GoUnionOrderPay?appid=' + appid + '&Id=' + orderId + '&MemberInfoId=' + user.Id, "", wx.getStorageSync('header'), (LayerOrderRes) => {
+    http.getRequest('/api/BusMobile/GoUnionOrderPay?appid=' + appid + '&Id=' + orderId + '&MemberInfoId=' + user.Id + "&PaymentType=2", "", wx.getStorageSync('header'), (LayerOrderRes) => {
       console.log('请求成功', LayerOrderRes)
       if (LayerOrderRes.code == 0) {
         console.log('获取支付所需信息成功')
         var payData = LayerOrderRes.data
-        console.log('拉起支+付')
-        wx.requestPayment({
-          timeStamp: payData.TimeStamp,
-          nonceStr: payData.NonceStr,
-          package: payData.Package,
-          signType: payData.SignType,
-          paySign: payData.PaySign,
-          success(paymentRes) {
+        // 记录待确认订单并注册 onAppShow 监听，用户从云闪付返回后查询支付结果
+        unionPayWatcher.mark(orderId, 'bus');
+        wx.navigateToMiniProgram({
+          appId: payData.CqpMpAppId,
+          path: payData.CqpMpPath,
+          fail(err) {
+            console.log('打开云闪付失败', err)
+            unionPayWatcher.clear();
             wx.showModal({
-              title: '预约成功',
-              content: '订单已预约成功，司机将会在您出发前一小时联系你',
-              showCancel: false, // 隐藏取消按钮，强制用户点击确认
-              confirmText: '我知道了',
-              success: function () {
-                that.setSubscribeMessage();
-                setTimeout(function () {
+              title: '提示',
+              content: '无法打开云闪付，可稍后在订单页继续支付。',
+              confirmText: '查看订单',
+              cancelText: '知道了',
+              success(r) {
+                if (r.confirm) {
                   wx.reLaunch({
                     url: '/user_center/pages/payDetail/payDetail?orderId=' + orderId + "&from=orderList"
                   })
-                }, 100)
+                }
               }
             })
-          },
-          fail(paymentErr) {
-
-            console.log('拉起支付失败', paymentErr)
-            setTimeout(function () {
-              wx.reLaunch({
-                url: '/user_center/pages/payDetail/payDetail?orderId=' + orderId + "&from=orderList"
-              })
-            }, 1000)
           }
         })
       } else if (LayerOrderRes.code == 400 && LayerOrderRes.msg == "已付款") {
@@ -812,7 +937,7 @@ Page({
     }, (LayerOrderRrr) => {
       console.log('请求失败', LayerOrderRrr)
     })
-  }, 3000),
+  },
   setSubscribeMessage: function () {
     wx.showModal({
       title: '提示',
