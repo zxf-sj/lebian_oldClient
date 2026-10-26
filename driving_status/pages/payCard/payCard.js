@@ -11,7 +11,7 @@ Page({
   data: {
     dataList: [],
     Phone: '',
-    imgbaseUrl:''
+    imgbaseUrl: ''
   },
 
   /**
@@ -19,7 +19,7 @@ Page({
    */
   onLoad(options) {
     this.setData({
-      imgbaseUrl:baseUrl
+      imgbaseUrl: baseUrl
     })
   },
 
@@ -37,7 +37,7 @@ Page({
     let _this = this;
     _this.getList();
     this.setData({
-      imgbaseUrl:baseUrl
+      imgbaseUrl: baseUrl
     })
   },
   changeTel: debounce(function (e) {
@@ -56,7 +56,7 @@ Page({
           wx.showLoading({
             title: '加载中',
           })
-          
+
           const openid = wx.getStorageSync('openid');
           if (!openid) {
             wx.navigateTo({
@@ -94,10 +94,10 @@ Page({
                     const payData = ress
                     wx.requestPayment({
                       timeStamp: payData.TimeStamp,
-          nonceStr: payData.NonceStr,
-          package: payData.Package,
-          signType: payData.SignType,
-          paySign: payData.PaySign,
+                      nonceStr: payData.NonceStr,
+                      package: payData.Package,
+                      signType: payData.SignType,
+                      paySign: payData.PaySign,
                       success(paymentRes) {
                         wx.showToast({
                           title: '支付成功',
@@ -134,7 +134,7 @@ Page({
   getList() {
     let _this = this;
     var userinfo = wx.getStorageSync('userInfo');
-    if(!userinfo){
+    if (!userinfo) {
       wx.navigateTo({
         url: '/user_center/pages/login/login',
       })
@@ -143,7 +143,7 @@ Page({
       title: '加载中',
     })
     let params = {
-      MemberId:userinfo.Id
+      MemberId: userinfo.Id
     }
     wx.request({
       url: baseUrl + '/api/CarPromotion/ProductList',
@@ -160,7 +160,7 @@ Page({
       },
     })
   },
- 
+
   /**
    * 生命周期函数--监听页面隐藏
    */

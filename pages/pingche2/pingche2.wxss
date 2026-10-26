@@ -771,6 +771,94 @@
   color: #666;
 }
 
+/* ===== 支付立减优惠卡片 ===== */
+.pay-promo {
+  margin-top: 24rpx;
+  background: #fdf0ec;
+  border-radius: 16rpx;
+  padding: 20rpx 20rpx 22rpx;
+}
+
+.pay-promo-head {
+  display: flex;
+  align-items: center;
+}
+
+.pay-promo-icon {
+  width: 40rpx;
+  height: 40rpx;
+  line-height: 40rpx;
+  text-align: center;
+  background: linear-gradient(135deg, #ff7a45 0%, #e60c0c 100%);
+  color: #fff;
+  font-size: 26rpx;
+  font-weight: 600;
+  border-radius: 10rpx;
+  flex-shrink: 0;
+}
+
+.pay-promo-title {
+  margin-left: 12rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #e60c0c;
+}
+
+.pay-promo-detail {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  font-size: 26rpx;
+  color: #e60c0c;
+  padding: 6rpx 0 6rpx 20rpx;
+}
+
+.pay-promo-arrow {
+  margin-left: 6rpx;
+  font-size: 24rpx;
+  transition: transform 0.2s;
+}
+
+.pay-promo-arrow-up {
+  transform: rotate(180deg);
+}
+
+.pay-promo-strip {
+  margin-top: 16rpx;
+  display: inline-block;
+  background: linear-gradient(90deg, #ff8a3d 0%, #f5402a 100%);
+  color: #fff;
+  font-size: 24rpx;
+  font-weight: 500;
+  border-radius: 8rpx;
+  padding: 8rpx 16rpx;
+}
+
+.pay-promo-list {
+  margin-top: 16rpx;
+  border-top: 2rpx dashed #f3c9bd;
+  padding-top: 14rpx;
+}
+
+.pay-promo-item {
+  position: relative;
+  font-size: 24rpx;
+  color: #b3341f;
+  line-height: 44rpx;
+  padding-left: 24rpx;
+}
+
+.pay-promo-item::before {
+  content: '';
+  position: absolute;
+  left: 6rpx;
+  top: 18rpx;
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 50%;
+  background: #e60c0c;
+}
+
 .pay-option {
   display: flex;
   align-items: center;
@@ -785,6 +873,19 @@
 .pay-option-active {
   border-color: #F08718;
   background: #fff8ee;
+}
+
+.pay-option-main {
+  display: flex;
+  align-items: center;
+}
+
+.pay-option-logo {
+  width: 56rpx;
+  height: 56rpx;
+  margin-right: 20rpx;
+  flex-shrink: 0;
+  border-radius: 8rpx;
 }
 
 .pay-option-left {

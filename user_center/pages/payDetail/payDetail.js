@@ -61,13 +61,22 @@ Page({
     payType: 'union', //当前选中支付方式：union=云闪付（默认） wechat=微信
     paySheetPhone: '', //弹框展示的手机号
     paySheetOrderId: '', //待支付订单号
+    payPromoDetailShow: false, //支付立减优惠详情是否展开
+    payPromoRules: [
+      '满5元立减1元',
+      '满10元立减2元',
+      '满50元立减10元',
+      '满100元立减20元'
+    ], //支付立减优惠规则
     payTypeList: [{
+        img: '/assets/images/yunshanfu.png',
         key: 'union',
         name: '云闪付支付',
         tip: '选择云闪付支付随机立减',
         tag: ''
       },
       {
+        img: '/assets/images/wechat.png',
         key: 'wechat',
         name: '微信支付',
         tip: '',
@@ -553,6 +562,12 @@ Page({
       paySheetShow: true,
       paySheetOrderId: orderId,
       paySheetPhone: detail.PersonalIds || detail.PassengerPhone || ''
+    })
+  },
+  // 底部支付方式弹框：展开/收起支付立减优惠详情
+  togglePayPromoDetail() {
+    this.setData({
+      payPromoDetailShow: !this.data.payPromoDetailShow
     })
   },
   // 底部支付方式弹框：切换支付方式

@@ -41,7 +41,7 @@ Page({
   },
   onLoad: async function (opt) {
     //发布之前改时间 推迟几个小时
-    var time = "2026-10-20 18:00:00";
+    var time = "2026-10-19 18:00:00";
     // var time = "2026-10-20 18:00:00";
     var t = util.formatTime(new Date());
     this.setData({
